@@ -1,0 +1,437 @@
+﻿@page "/manage-reservations"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject BloodUnitsCRUD BloodUnitService
+@inject ReservationCRUD ReservationService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Gestión de Reservas - Red de Bancos de Sangre</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center min-vh-50">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-warning" role="alert">
+        Por favor, inicie sesión para gestionar las reservas.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="text-danger fw-bold">
+                    <i class="bi bi-droplet-fill me-2"></i>
+                    Gestión de Reservas de Sangre
+                </h1>
+            </div>
+        </div>
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                @errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        <div class="row g-4">
+            <div class="col-12 col-lg-7">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center py-3">
+                        <h3 class="h5 mb-0">
+                            <i class="bi bi-inbox-fill me-2"></i>
+                            Solicitudes Entrantes
+                        </h3>
+                        <span class="badge bg-white text-danger fs-6">
+                            @incomingReservations.Count solicitudes
+                        </span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (!incomingReservations.Any())
+                        {
+                            <div class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox text-danger mb-3" style="font-size: 2rem;"></i>
+                                <p class="mb-0">No hay solicitudes entrantes en este momento.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Solicitante</th>
+                                            <th>Tipo Sangre</th>
+                                            <th>Fecha</th>
+                                            <th>Estado</th>
+                                            <th>Tiempo Restante</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var reservation in incomingReservations)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="fw-bold">@reservation.UserName</div>
+                                                    @if (!string.IsNullOrEmpty(reservation.Notes))
+                                                    {
+                                                        <small class="text-muted">@reservation.Notes</small>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-danger-subtle text-danger">
+                                                        @reservation.BloodType
+                                                    </span>
+                                                </td>
+                                                <td>@reservation.RequestDate?.ToShortDateString()</td>
+                                                <td>
+                                                    <span class="badge @GetStatusBadgeClass(reservation.Status)">
+                                                        @TranslateStatus(reservation.Status)
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    @if (reservation.Status == "Aprobado" && reservation.AcceptanceTime.HasValue)
+                                                    {
+                                                        var timeLeft = GetTimeLeft(reservation.AcceptanceTime.Value);
+                                                        @if (timeLeft.TotalSeconds > 0)
+                                                        {
+                                                            <span class="@(timeLeft.TotalHours < 1 ? "text-danger fw-bold" : "")">
+                                                                <i class="bi bi-clock me-1"></i>
+                                                                @($"{timeLeft.Hours:D2}:{timeLeft.Minutes:D2}:{timeLeft.Seconds:D2}")
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-danger">
+                                                                <i class="bi bi-exclamation-circle me-1"></i>
+                                                                Expirado
+                                                            </span>
+                                                        }
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (reservation.Status == "Pendiente")
+                                                    {
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-success btn-sm"
+                                                                    @onclick="@(() => HandleStatusUpdate(reservation.Id, "Aprobado"))">
+                                                                <i class="bi bi-check-lg me-1"></i>
+                                                                Aprobar
+                                                            </button>
+                                                            <button class="btn btn-danger btn-sm"
+                                                                    @onclick="@(() => HandleStatusUpdate(reservation.Id, "Rechazado"))">
+                                                                <i class="bi bi-x-lg me-1"></i>
+                                                                Rechazar
+                                                            </button>
+                                                        </div>
+                                                    }
+                                                    @if (reservation.Status == "Aprobado")
+                                                    {
+                                                        <button class="btn btn-primary btn-sm"
+                                                                @onclick="@(() => FinalizeReservation(reservation))">
+                                                            <i class="bi bi-check-circle me-1"></i>
+                                                            Finalizar
+                                                        </button>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center py-3">
+                        <h3 class="h5 mb-0">
+                            <i class="bi bi-send-fill me-2"></i>
+                            Mis Solicitudes
+                        </h3>
+                        <span class="badge bg-white text-danger fs-6">
+                            @myReservations.Count solicitudes
+                        </span>
+                    </div>
+                    <div class="card-body p-0">
+                        @if (!myReservations.Any())
+                        {
+                            <div class="text-center py-5 text-muted">
+                                <i class="bi bi-clipboard text-danger mb-3" style="font-size: 2rem;"></i>
+                                <p class="mb-0">No has realizado ninguna solicitud.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Tipo Sangre</th>
+                                            <th>Fecha</th>
+                                            <th>Estado</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var reservation in myReservations)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <span class="badge bg-danger-subtle text-danger">
+                                                        @reservation.BloodType
+                                                    </span>
+                                                </td>
+                                                <td>@reservation.RequestDate?.ToShortDateString()</td>
+                                                <td>
+                                                    <span class="badge @GetStatusBadgeClass(reservation.Status)">
+                                                        @TranslateStatus(reservation.Status)
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    @if (reservation.Status == "Pendiente")
+                                                    {
+                                                        <button class="btn btn-outline-danger btn-sm"
+                                                                @onclick="@(() => CancelReservation(reservation.Id))">
+                                                            <i class="bi bi-x-circle me-1"></i>
+                                                            Cancelar
+                                                        </button>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string? errorMessage;
+    private List<Reservation> incomingReservations = new();
+    private List<Reservation> myReservations = new();
+    private int userId;
+    private Timer? refreshTimer;
+    private Dictionary<int, DateTime> acceptanceTimes = new();
+    private const int RESERVATION_TIMEOUT_HOURS = 8;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userId = int.Parse(userProfile[3]);
+
+            await LoadData();
+
+            // Start refresh timer - updating to 1 second for more precise countdown
+            refreshTimer = new Timer(async _ =>
+            {
+                await CheckTimeouts();
+                await LoadData();
+                await InvokeAsync(StateHasChanged);
+            }, null, 0, 1000); // Update every second
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading data. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private TimeSpan GetTimeLeft(DateTime acceptanceTime)
+    {
+        var deadline = acceptanceTime.AddHours(RESERVATION_TIMEOUT_HOURS);
+        return deadline - DateTime.Now;
+    }
+
+    private async Task CheckTimeouts()
+    {
+        var expiredReservations = incomingReservations
+            .Where(r => r.Status == "Aprobado"
+                && r.AcceptanceTime.HasValue
+                && GetTimeLeft(r.AcceptanceTime.Value).TotalSeconds <= 0)
+            .ToList();
+
+        foreach (var reservation in expiredReservations)
+        {
+            await HandleReservationTimeout(reservation);
+        }
+    }
+
+    private async Task HandleReservationTimeout(Reservation reservation)
+    {
+        try
+        {
+            // Update reservation status to Cancelado
+            reservation.Status = "Cancelado";
+            await ReservationService.UpdateAsync(reservation);
+
+            // Update blood unit status back to Disponible
+            var bloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+            if (bloodUnit != null)
+            {
+                bloodUnit.Status = "Disponible";
+                await BloodUnitService.UpdateAsync(bloodUnit, userId);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error handling reservation timeout.";
+        }
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pendiente" => "bg-warning text-dark",
+        "Aprobado" => "bg-success",
+        "Rechazado" => "bg-danger",
+        "Finalizado" => "bg-primary",
+        _ => "bg-secondary"
+    };
+
+    private string TranslateStatus(string status) => status switch
+    {
+        "Pendiente" => "Pendiente",
+        "Aprobado" => "Aprobado",
+        "Rechazado" => "Rechazado",
+        "Finalizado" => "Finalizado",
+        "Cancelado" => "Cancelado",
+        _ => status
+    };
+
+    private async Task LoadData()
+    {
+        try
+        {
+            var allReservations = await ReservationService.GetAllAsync();
+            incomingReservations = allReservations
+                .Where(r => r.UserID != userId)
+                .OrderByDescending(r => r.RequestDate)
+                .ToList();
+
+            myReservations = allReservations
+                .Where(r => r.UserID == userId)
+                .OrderByDescending(r => r.RequestDate)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error refreshing data.";
+        }
+    }
+
+    private async Task HandleStatusUpdate(int reservationId, string newStatus)
+    {
+        try
+        {
+            var reservation = await ReservationService.GetByIdAsync(reservationId);
+            if (reservation != null)
+            {
+                reservation.Status = newStatus;
+
+                if (newStatus == "Aprobado")
+                {
+                    reservation.AcceptanceTime = DateTime.Now;
+                }
+                else if (newStatus == "Rechazado")
+                {
+                    // Update blood unit status back to Disponible
+                    var bloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+                    if (bloodUnit != null)
+                    {
+                        bloodUnit.Status = "Disponible";
+                        await BloodUnitService.UpdateAsync(bloodUnit, userId);
+                    }
+                }
+
+                await ReservationService.UpdateAsync(reservation);
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error updating reservation status.";
+        }
+    }
+
+    private async Task FinalizeReservation(Reservation reservation)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to finalize this reservation? This action cannot be undone."))
+            return;
+
+        try
+        {
+            // Update reservation status
+            reservation.Status = "Finalizado";
+            await ReservationService.UpdateAsync(reservation);
+
+            // Update blood unit status
+            var bloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+            if (bloodUnit != null)
+            {
+                bloodUnit.Status = "Despachado";
+                await BloodUnitService.UpdateAsync(bloodUnit, userId);
+            }
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error finalizing reservation.";
+        }
+    }
+
+    private async Task CancelReservation(int reservationId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to cancel this reservation?"))
+            return;
+
+        try
+        {
+            await ReservationService.DeleteAsync(reservationId);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error canceling reservation.";
+        }
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}

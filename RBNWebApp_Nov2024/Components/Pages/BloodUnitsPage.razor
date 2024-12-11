@@ -1,0 +1,346 @@
+﻿@page "/blood-units/{RefrigeratorId:int}/{DrawerId:int}"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject RefrigeratorCRUD RefrigeratorService
+@inject DrawerCRUD DrawerService
+@inject BloodUnitsCRUD BloodUnitService
+@inject IJSRuntime JS
+
+<PageTitle>Gestión de Unidades de Sangre</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-warning" role="alert">
+        Por favor, inicie sesión para ver las unidades de sangre.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <nav aria-label="breadcrumb" class="bg-light p-2 rounded">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item">
+                    <a href="/refrigerators" class="text-danger text-decoration-none">Refrigeradores</a>
+                </li>
+                <li class="breadcrumb-item text-danger">
+                    @($"Refrigerador {refrigerator?.SerialNumber}")
+                </li>
+                <li class="breadcrumb-item active">
+                    @($"Cajón {drawer?.DrawerNumber}")
+                </li>
+            </ol>
+        </nav>
+
+        <div class="card mt-4 border-danger">
+            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-0">Gestión de Unidades de Sangre</h4>
+                    <small class="text-white-50">
+                        Capacidad del Cajón: @(drawer?.Capacity ?? 0) unidades | Espacio Disponible: @availableSpace unidades
+                    </small>
+                </div>
+                <div>
+                    @if (availableSpace > 0)
+                    {
+                        <button class="btn btn-light" @onclick="() => ShowEditModal(null)">
+                            <i class="bi bi-plus-circle-fill me-2"></i>Nueva Unidad
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-light" disabled>
+                            <i class="bi bi-exclamation-circle-fill me-2"></i>Cajón Lleno
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="card-body">
+                @if (errorMessage != null)
+                {
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+                        <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+                    </div>
+                }
+
+                @if (!bloodUnits.Any())
+                {
+                    <div class="text-center py-5">
+                        <i class="bi bi-droplet-fill text-danger" style="font-size: 3rem;"></i>
+                        <h5 class="mt-3">No hay unidades de sangre en este cajón</h5>
+                        <p class="text-muted">Agregue una nueva unidad para comenzar</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tipo de Sangre</th>
+                                    <th>Cantidad (mL)</th>
+                                    <th>Fecha de Donación</th>
+                                    <th>Fecha de Caducidad</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var unit in bloodUnits)
+                                {
+                                    <tr>
+                                        <td><span class="badge bg-danger">@unit.BloodType</span></td>
+                                        <td>@unit.Quantity mL</td>
+                                        <td>@unit.DonationDate.ToShortDateString()</td>
+                                        <td>
+                                            <span class="@(unit.ExpiryDate < DateTime.Today ? "text-danger" : "")">
+                                                @unit.ExpiryDate.ToShortDateString()
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(unit.Status)">
+                                                @GetSpanishStatus(unit.Status)
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group">
+                                                <button class="btn btn-outline-primary btn-sm" @onclick="() => ShowEditModal(unit)">
+                                                    <i class="bi bi-pencil-fill"></i>
+                                                </button>
+                                                <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteBloodUnit(unit.Id)">
+                                                    <i class="bi bi-trash-fill"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (showModal)
+        {
+            <div class="modal fade show" style="display: block;" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                @(editingBloodUnit.Id == 0 ? "Nueva Unidad de Sangre" : "Editar Unidad de Sangre")
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <EditForm Model="@editingBloodUnit" OnValidSubmit="HandleValidSubmit">
+                                <DataAnnotationsValidator />
+                                <div class="mb-3">
+                                    <label class="form-label">Tipo de Sangre</label>
+                                    <select @bind="editingBloodUnit.BloodType" class="form-select">
+                                        <option value="">Seleccionar Tipo de Sangre</option>
+                                        @foreach (var type in bloodTypes)
+                                        {
+                                            <option value="@type">@type</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Cantidad (mL)</label>
+                                    <InputNumber @bind-Value="editingBloodUnit.Quantity" class="form-control" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha de Donación</label>
+                                    <InputDate @bind-Value="editingBloodUnit.DonationDate" class="form-control" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Fecha de Caducidad</label>
+                                    <InputDate @bind-Value="editingBloodUnit.ExpiryDate" class="form-control" />
+                                </div>
+                                @if (editingBloodUnit.Id != 0)
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label">Estado</label>
+                                        <select @bind="editingBloodUnit.Status" class="form-select">
+                                            @foreach (var status in bloodUnitStatuses)
+                                            {
+                                                <option value="@status">@GetSpanishStatus(status)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Notas de Cambio de Estado</label>
+                                        <InputText @bind-Value="editingBloodUnit.StatusChangeNotes" class="form-control" />
+                                    </div>
+                                }
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancelar</button>
+                                    <button type="submit" class="btn btn-danger">Guardar</button>
+                                </div>
+                            </EditForm>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-backdrop fade show"></div>
+        }
+    </div>
+}
+
+
+@code {
+    [Parameter]
+    public int RefrigeratorId { get; set; }
+
+    [Parameter]
+    public int DrawerId { get; set; }
+
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string? errorMessage;
+    private Refrigerator? refrigerator;
+    private Drawer? drawer;
+    private List<BloodUnit> bloodUnits = new();
+    private bool showModal = false;
+    private BloodUnit editingBloodUnit = new();
+    private int userId;
+    private int availableSpace = 0;
+
+    private readonly string[] bloodTypes = { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" };
+    private readonly string[] bloodUnitStatuses = { "Disponible", "Reservado", "Despachado", "Expirado" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userId = int.Parse(userProfile[3]);
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading data. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        refrigerator = await RefrigeratorService.GetByIdAsync(RefrigeratorId);
+        drawer = await DrawerService.GetByIdAsync(DrawerId);
+
+        if (drawer == null || refrigerator == null)
+        {
+            NavigationManager.NavigateTo("/refrigerators");
+            return;
+        }
+
+        bloodUnits = await BloodUnitService.GetAllByDrawerIdAsync(DrawerId);
+        availableSpace = drawer.Capacity - bloodUnits.Count;
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Disponible" => "bg-success",
+        "Reservado" => "bg-warning",
+        "Despachado" => "bg-info",
+        "Expirado" => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetSpanishStatus(string status) => status switch
+    {
+        "Disponible" => "Disponible",
+        "Reservado" => "Reservado",
+        "Despachado" => "Despachado",
+        "Expirado" => "Expirado",
+        _ => status
+    };
+
+    private void ShowEditModal(BloodUnit? bloodUnit)
+    {
+        editingBloodUnit = bloodUnit ?? new BloodUnit
+            {
+                DrawerID = DrawerId,
+                Status = "Disponible",
+                DonationDate = DateTime.Today,
+                ExpiryDate = DateTime.Today.AddDays(42),
+                Quantity = 450, // Default quantity in mL
+                CurrentUserID = userId
+            };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingBloodUnit = new();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            if (editingBloodUnit.Id == 0)
+            {
+                if (availableSpace <= 0)
+                {
+                    errorMessage = "Drawer is full. Cannot add more blood units.";
+                    return;
+                }
+                editingBloodUnit.CurrentUserID = userId;
+                await BloodUnitService.CreateAsync(editingBloodUnit);
+            }
+            else
+            {
+                await BloodUnitService.UpdateAsync(editingBloodUnit, userId);
+            }
+
+            await LoadData();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error saving blood unit. Please try again.";
+        }
+    }
+
+    private async Task DeleteBloodUnit(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this blood unit?"))
+            return;
+
+        try
+        {
+            await BloodUnitService.DeleteAsync(id, userId);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error deleting blood unit. Please try again.";
+        }
+    }
+}

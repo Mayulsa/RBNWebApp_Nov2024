@@ -1,0 +1,103 @@
+﻿@page "/user-map"
+@using RBNWebApp_Nov2024.Class
+@inject UserCRUD UserService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>User Map</PageTitle>
+
+<div class="container mt-4">
+    <h2>Locations</h2>
+    @if (isLoading)
+    {
+        <div class="text-center mt-4">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (errorMessage != null)
+    {
+        <div class="alert alert-danger" role="alert">
+            @errorMessage
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-body">
+                <div id="map" style="height: 500px; width: 100%;"></div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private string? errorMessage;
+    private List<User> users = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading data. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && users.Any())
+        {
+            await InitializeMap();
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            users = await UserService.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading locations. Please try again.";
+        }
+    }
+
+    private async Task InitializeMap()
+    {
+        try
+        {
+            var userLocations = users.Select(u => new
+            {
+                u.Name,
+                u.Email,
+                u.Role,
+                u.Latitude,
+                u.Longitude
+            }).ToList();
+
+            // Add debug logging
+            Console.WriteLine($"Initializing map with {userLocations.Count} users");
+            foreach (var user in userLocations)
+            {
+                Console.WriteLine($"User: {user.Name}, Lat: {user.Latitude}, Lng: {user.Longitude}");
+            }
+
+            await JSRuntime.InvokeVoidAsync("initializeMap", userLocations);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error initializing map: {ex.Message}";
+            Console.WriteLine($"Map initialization error: {ex}");
+        }
+    }
+}

@@ -1,7 +1,131 @@
 ﻿@page "/"
+@using Blazored.LocalStorage
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+@inject ILocalStorageService LocalStorage
+@implements IAsyncDisposable
 
-<PageTitle>Home</PageTitle>
+<div class="container-fluid px-0">
+    <!-- Hero Section -->
+    <div class="hero-section bg-danger text-white py-5">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8 text-center text-md-start">
+                    <h1 class="display-4 fw-bold mb-4">Red Nacional de Servicios de Sangre</h1>
+                    <p class="lead mb-4">Conectando donantes con quienes más lo necesitan</p>
+                    @if (!isLoggedIn)
+                    {
+                            <button class="btn btn-light btn-lg px-4" @onclick="NavigateToLogin">
+                                Iniciar Sesión
+                            </button>
+                    }
+                </div>
+                <div class="col-md-4 d-none d-md-block">
+                    <img src="/api/placeholder/400/300" alt="Banco de Sangre" class="img-fluid rounded shadow"/>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<h1>Hello, world!</h1>
+    <!-- Información Principal -->
+    <div class="container my-5">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h2 class="card-title text-danger mb-3">¿En qué consiste la Red?</h2>
+                        <p class="card-text">
+                            Esta nueva red estará complementada por el Hemocentro Nacional, los bancos de sangre 
+                            públicos y privados, y los servicios de transfusión y organizaciones de donantes 
+                            habilitados de acuerdo a la ley General de Salud No. 42-01 y su normativa complementaria.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h2 class="card-title text-danger mb-3">Nuestro Objetivo</h2>
+                        <p class="card-text">
+                            Esta entidad tiene como objetivo ser una referencia nacional para la provisión 
+                            de sangre en el país, garantizando un suministro seguro y eficiente para 
+                            todos los ciudadanos.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-Welcome to your new app.
+        <!-- Historia Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h2 class="text-danger mb-3">Historia</h2>
+                        <p>
+                            La entidad fue creada mediante el Decreto 216-20 el 17 de junio de 2020, 
+                            marcando un hito importante en el sistema de salud nacional.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Call to Action -->
+        @if (!isLoggedIn)
+        {
+                <div class="text-center my-5">
+                    <h3 class="mb-4">¿Listo para unirte a nuestra red?</h3>
+                    <button class="btn btn-danger btn-lg px-5" @onclick="NavigateToLogin">
+                        Comenzar Ahora
+                    </button>
+                </div>
+        }
+    </div>
+</div>
+
+<style>
+    .hero-section {
+        background: linear-gradient(135deg, #dc3545 0%, #900 100%);
+    }
+</style>
+
+@code {
+    private bool isLoggedIn = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckLoginStatus();
+    }
+
+    private async Task CheckLoginStatus()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile != null && userProfile.Any())
+            {
+                isLoggedIn = true;
+                NavigationManager.NavigateTo("/dashboard");
+            }
+            else
+            {
+                isLoggedIn = false;
+            }
+        }
+        catch
+        {
+            isLoggedIn = false;
+        }
+    }
+
+    private void NavigateToLogin()
+    {
+        NavigationManager.NavigateTo("/login");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Cleanup if needed
+    }
+}

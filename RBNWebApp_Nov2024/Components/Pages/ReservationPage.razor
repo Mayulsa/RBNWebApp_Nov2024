@@ -1,0 +1,418 @@
+﻿@page "/reservations"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject BloodUnitsCRUD BloodUnitService
+@inject ReservationCRUD ReservationService
+@inject UserCRUD UserService
+@inject DrawerCRUD DrawerService
+@inject RefrigeratorCRUD RefrigeratorService
+@implements IDisposable
+
+<PageTitle>Red Nacional de Bancos de Sangre - Reservas</PageTitle>
+
+@if (isLoading)
+{
+    <div class="position-absolute top-50 start-50 translate-middle">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Por favor, inicie sesión para ver las unidades de sangre disponibles.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-droplet-fill text-danger me-2 fs-3"></i>
+                    <h2 class="mb-0">Banco de Sangre - Unidades Disponibles</h2>
+                </div>
+                <p class="text-muted mt-2">
+                    Sistema Nacional de Gestión de Reservas de Sangre
+                </p>
+            </div>
+        </div>
+
+        <div class="card border-danger mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Filtros de Búsqueda</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-funnel-fill me-1"></i>
+                                Tipo de Sangre
+                            </label>
+                            <select id="bloodTypeFilter" class="form-select border-danger" @bind="selectedBloodType">
+                                <option value="">Todos los Tipos</option>
+                                @foreach (var type in bloodTypes)
+                                {
+                                    <option value="@type">@type</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label class="form-label fw-bold">
+                                <i class="bi bi-hospital-fill me-1"></i>
+                                Centro Médico
+                            </label>
+                            <select id="userFilter" class="form-select border-danger" @bind="selectedUserId">
+                                <option value="0">Todos los Centros</option>
+                                @foreach (var user in availableUsers)
+                                {
+                                    <option value="@user.Id">@user.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-circle-fill me-2"></i>
+                @errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-danger">
+                            <tr>
+                                <th>Tipo de Sangre</th>
+                                <th>Centro Médico</th>
+                                <th>Cantidad (ml)</th>
+                                <th>Fecha Donación</th>
+                                <th>Fecha Vencimiento</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!FilteredBloodUnits.Any())
+                            {
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <i class="bi bi-emoji-frown text-danger fs-4"></i>
+                                        <p class="text-muted mt-2">No se encontraron unidades de sangre con los filtros seleccionados.</p>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var unit in FilteredBloodUnits)
+                                {
+                                    var owner = GetUserForBloodUnit(unit.DrawerID);
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-danger">@unit.BloodType</span>
+                                        </td>
+                                        <td>@owner.Name</td>
+                                        <td>@unit.Quantity ml</td>
+                                        <td>@unit.DonationDate.ToShortDateString()</td>
+                                        <td>
+                                            @{
+                                                var daysUntilExpiry = (unit.ExpiryDate - DateTime.Now).Days;
+                                                var expiryClass = daysUntilExpiry <= 7 ? "text-danger" : "text-dark";
+                                            }
+                                            <span class="@expiryClass">
+                                                @unit.ExpiryDate.ToShortDateString()
+                                                @if (daysUntilExpiry <= 7)
+                                                {
+                                                    <span class="badge bg-danger ms-1">
+                                                        @(daysUntilExpiry) días
+                                                    </span>
+                                                }
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if (owner.Id != userId)
+                                            {
+                                                <button class="btn btn-outline-danger"
+                                                        @onclick="@(() => ShowReservationModal(unit))">
+                                                    <i class="bi bi-heart-pulse me-1"></i>
+                                                    Reservar
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Unidad Propia</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (showReservationModal && selectedBloodUnit != null)
+    {
+        <div class="modal fade show" style="display: block" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content border-danger">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-clipboard-heart me-2"></i>
+                            Solicitud de Reserva
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseReservationModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi bi-droplet-fill text-danger me-2"></i>
+                                <h6 class="mb-0">Detalles de la Unidad</h6>
+                            </div>
+                            <hr>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p>
+                                        <strong>Tipo de Sangre:</strong>
+                                        <span class="badge bg-danger">@selectedBloodUnit.BloodType</span>
+                                    </p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>Cantidad:</strong> @selectedBloodUnit.Quantity ml</p>
+                                </div>
+                                <div class="col-12">
+                                    <p><strong>Vencimiento:</strong> @selectedBloodUnit.ExpiryDate.ToShortDateString()</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="bi bi-pencil-square me-1"></i>
+                                Notas (Opcional)
+                            </label>
+                            <textarea class="form-control border-danger"
+                                      @bind="reservationNotes"
+                                      rows="3"
+                                      placeholder="Ingrese cualquier información adicional relevante..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseReservationModal">
+                            <i class="bi bi-x-circle me-1"></i>
+                            Cancelar
+                        </button>
+                        <button type="button" class="btn btn-danger" @onclick="MakeReservation">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Confirmar Reserva
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string? errorMessage;
+    private List<BloodUnit> bloodUnits = new();
+    private Dictionary<int, User> userCache = new();
+    private Dictionary<int, User> drawerOwners = new();
+    private List<User> availableUsers = new();
+    private int userId;
+    private Timer? refreshTimer;
+    private bool showReservationModal = false;
+    private BloodUnit? selectedBloodUnit;
+    private string reservationNotes = "";
+    private string selectedBloodType = "";
+    private int selectedUserId = 0;
+
+    private readonly string[] bloodTypes = { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userId = int.Parse(userProfile[3]);
+
+            await LoadData();
+
+            refreshTimer = new Timer(async _ =>
+            {
+                await LoadData();
+                await InvokeAsync(StateHasChanged);
+            }, null, 0, 5000);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading data. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            // Get all blood units that are available
+            bloodUnits = await BloodUnitService.GetAllAsync();
+            bloodUnits = bloodUnits.Where(u => u.Status == "Disponible").ToList();
+
+            // Load all drawers and refrigerators
+            var allDrawers = await DrawerService.GetAllAsync();
+            var allRefrigerators = await RefrigeratorService.GetAllAsync();
+
+            // Clear previous cache
+            drawerOwners.Clear();
+
+            // Get all users
+            availableUsers = await UserService.GetAllAsync();
+
+            // Build the ownership chain
+            foreach (var unit in bloodUnits)
+            {
+                var drawer = allDrawers.FirstOrDefault(d => d.Id == unit.DrawerID);
+                if (drawer != null)
+                {
+                    var refrigerator = allRefrigerators.FirstOrDefault(r => r.Id == drawer.RefrigeratorID);
+                    if (refrigerator != null)
+                    {
+                        var user = availableUsers.FirstOrDefault(u => u.Id == refrigerator.UserID);
+                        if (user != null)
+                        {
+                            drawerOwners[drawer.Id] = user;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error refreshing data.";
+        }
+    }
+
+    private async Task<User?> GetUserById(int userId)
+    {
+        if (userCache.ContainsKey(userId))
+            return userCache[userId];
+
+        var user = await UserService.GetByIdAsync(userId);
+        if (user != null)
+            userCache[userId] = user;
+
+        return user;
+    }
+
+    private User GetUserForBloodUnit(int drawerId)
+    {
+        if (drawerOwners.TryGetValue(drawerId, out var user))
+            return user;
+
+        return new User { Name = "Unknown" };
+    }
+
+    private IEnumerable<BloodUnit> FilteredBloodUnits
+    {
+        get
+        {
+            var query = bloodUnits.AsEnumerable();
+
+            // Apply blood type filter
+            if (!string.IsNullOrEmpty(selectedBloodType))
+            {
+                query = query.Where(u => u.BloodType == selectedBloodType);
+            }
+
+            // Apply user filter
+            if (selectedUserId != 0)
+            {
+                query = query.Where(u =>
+                {
+                    var owner = GetUserForBloodUnit(u.DrawerID);
+                    return owner.Id == selectedUserId;
+                });
+            }
+
+            return query;
+        }
+    }
+
+    private void ShowReservationModal(BloodUnit unit)
+    {
+        selectedBloodUnit = unit;
+        showReservationModal = true;
+    }
+
+    private async Task MakeReservation()
+    {
+        if (selectedBloodUnit == null) return;
+
+        try
+        {
+            // Create the reservation
+            var reservation = new Reservation
+                {
+                    BloodUnitID = selectedBloodUnit.Id,
+                    UserID = userId,
+                    RequestDate = DateTime.Now,
+                    Status = "Pendiente",
+                    Notes = reservationNotes
+                };
+
+            await ReservationService.CreateAsync(reservation);
+
+            // Update blood unit status to "Reservado"
+            selectedBloodUnit.Status = "Reservado";
+            await BloodUnitService.UpdateAsync(selectedBloodUnit, userId);
+
+            CloseReservationModal();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error making reservation. Please try again.";
+        }
+    }
+
+    private void CloseReservationModal()
+    {
+        showReservationModal = false;
+        selectedBloodUnit = null;
+        reservationNotes = "";
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}

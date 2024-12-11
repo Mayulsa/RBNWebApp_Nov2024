@@ -1,0 +1,429 @@
+﻿@page "/refrigerators"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject RefrigeratorCRUD RefrigeratorService
+@inject DrawerCRUD DrawerService
+@inject IJSRuntime JS
+
+<style>
+    .blood-red {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .blood-red-light {
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+    }
+
+    .blood-red-border {
+        border-color: #dc3545;
+    }
+
+    .refrigerator-card {
+        border: 2px solid #dc3545;
+        transition: all 0.3s ease;
+    }
+
+        .refrigerator-card:hover {
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.2);
+        }
+
+    .drawer-list-item {
+        border-left: 4px solid #dc3545;
+        margin-bottom: 8px;
+        transition: all 0.3s ease;
+    }
+
+        .drawer-list-item:hover {
+            background-color: #f8d7da;
+        }
+
+    .custom-header {
+        background: linear-gradient(45deg, #dc3545, #c82333);
+        color: white;
+        padding: 20px;
+        border-radius: 5px;
+        margin-bottom: 30px;
+    }
+</style>
+
+@if (isLoading)
+{
+    <div class="text-center mt-4">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-warning" role="alert">
+        Por favor, inicie sesión para ver sus refrigeradores.
+    </div>
+}
+else
+{
+    <div class="container mt-4">
+        <div class="custom-header">
+            <div class="row align-items-center">
+                <div class="col">
+                    <h2 class="mb-0">
+                        <i class="bi bi-thermometer-high me-2"></i>Control de Refrigeradores
+                    </h2>
+                    <p class="mb-0 mt-2 text-white-50">Red Nacional de Bancos de Sangre</p>
+                </div>
+                <div class="col text-end">
+                    <button class="btn btn-light" @onclick="() => ShowEditModal(null)">
+                        <i class="bi bi-plus-circle me-2"></i>Nuevo Refrigerador
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        @if (!refrigerators.Any())
+        {
+            <div class="alert blood-red-light border blood-red-border" role="alert">
+                <i class="bi bi-info-circle me-2"></i>No hay refrigeradores registrados. ¡Agregue uno para comenzar!
+            </div>
+        }
+        else
+        {
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                @foreach (var refrigerator in refrigerators)
+                {
+                    <div class="col">
+                        <div class="card refrigerator-card h-100">
+                            <div class="card-header blood-red">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-thermometer me-2"></i>Serie: @refrigerator.SerialNumber
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <p class="card-text">
+                                        <i class="bi bi-geo-alt me-2"></i>Ubicación: @(!string.IsNullOrEmpty(refrigerator.Location) ? refrigerator.Location : "No especificada")
+                                    </p>
+                                    <p class="card-text">
+                                        <i class="bi bi-circle-fill me-2 @(refrigerator.IsOperational == 1 ? "text-success" : "text-danger")"></i>
+                                        Estado: @(refrigerator.IsOperational == 1 ? "Operativo" : "Fuera de Servicio")
+                                    </p>
+                                </div>
+                                <div class="mt-4">
+                                    <h6 class="text-danger">
+                                        <i class="bi bi-layout-three-columns me-2"></i>Gavetas
+                                    </h6>
+                                    @{
+                                        var refrigeratorDrawers = drawers.Where(d => d.RefrigeratorID == refrigerator.Id).ToList();
+                                    }
+                                    @if (!refrigeratorDrawers.Any())
+                                    {
+                                        <p class="text-muted">No hay gavetas registradas</p>
+                                    }
+                                    else
+                                    {
+                                        <div class="list-group">
+                                            @foreach (var drawer in refrigeratorDrawers)
+                                            {
+                                                <div class="drawer-list-item list-group-item">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <strong>Gaveta @drawer.DrawerNumber</strong><br />
+                                                            <small class="text-muted">Capacidad: @drawer.Capacity unidades</small>
+                                                        </div>
+                                                        <div class="btn-group">
+                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => NavigateToBloodUnits(refrigerator, drawer)">
+                                                                <i class="bi bi-droplet-fill me-1"></i>Gestionar
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => ShowDrawerEditModal(drawer)">
+                                                                <i class="bi bi-pencil me-1"></i>Editar
+                                                            </button>
+                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteDrawer(drawer.Id)">
+                                                                <i class="bi bi-trash me-1"></i>Eliminar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    <button class="btn btn-sm btn-outline-danger mt-3 w-100" @onclick="() => ShowDrawerEditModal(new Drawer { RefrigeratorID = refrigerator.Id })">
+                                        <i class="bi bi-plus-circle me-2"></i>Agregar Gaveta
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-light">
+                                <div class="d-flex justify-content-between">
+                                    <button class="btn btn-outline-danger" @onclick="() => ShowEditModal(refrigerator)">
+                                        <i class="bi bi-pencil me-2"></i>Editar
+                                    </button>
+                                    <button class="btn btn-danger" @onclick="() => DeleteRefrigerator(refrigerator.Id)">
+                                        <i class="bi bi-trash me-2"></i>Eliminar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (showModal)
+    {
+        <div class="modal fade show" style="display: block" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header blood-red">
+                        <h5 class="modal-title">@(editingRefrigerator.Id == 0 ? "Nuevo" : "Editar") Refrigerador</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <EditForm Model="@editingRefrigerator" OnValidSubmit="HandleValidSubmit">
+                            <DataAnnotationsValidator />
+                            <div class="mb-3">
+                                <label class="form-label">Número de Serie</label>
+                                <InputText @bind-Value="editingRefrigerator.SerialNumber" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Ubicación</label>
+                                <InputText @bind-Value="editingRefrigerator.Location" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Estado Operativo</label>
+                                <select @bind="editingRefrigerator.IsOperational" class="form-select">
+                                    <option value="1">Operativo</option>
+                                    <option value="0">Fuera de Servicio</option>
+                                </select>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancelar</button>
+                                <button type="submit" class="btn btn-danger">Guardar</button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+
+    @if (showDrawerModal)
+    {
+        <div class="modal fade show" style="display: block" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header blood-red">
+                        <h5 class="modal-title">@(editingDrawer.Id == 0 ? "Nueva" : "Editar") Gaveta</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseDrawerModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <EditForm Model="@editingDrawer" OnValidSubmit="HandleDrawerValidSubmit">
+                            <DataAnnotationsValidator />
+                            <div class="mb-3">
+                                <label class="form-label">Número de Gaveta</label>
+                                <InputNumber @bind-Value="editingDrawer.DrawerNumber" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Capacidad (unidades)</label>
+                                <InputNumber @bind-Value="editingDrawer.Capacity" class="form-control" />
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="CloseDrawerModal">Cancelar</button>
+                                <button type="submit" class="btn btn-danger">Guardar</button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+}
+
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string? errorMessage;
+    private List<Refrigerator> refrigerators = new();
+    private List<Drawer> drawers = new();
+    private bool showModal = false;
+    private bool showDrawerModal = false;
+    private Refrigerator editingRefrigerator = new();
+    private Drawer editingDrawer = new();
+    private int userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Check authentication
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userId = int.Parse(userProfile[3]); // UserID is at index 3 based on LoginPage
+            await LoadRefrigerators();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading refrigerators. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadRefrigerators()
+    {
+        try
+        {
+            refrigerators = await RefrigeratorService.GetAllByUserIdAsync(userId);
+            await LoadAllDrawers();
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading refrigerators. Please try again.";
+        }
+    }
+
+    private async Task LoadAllDrawers()
+    {
+        drawers.Clear();
+        foreach (var refrigerator in refrigerators)
+        {
+            var refrigeratorDrawers = await DrawerService.GetAllByRefrigeratorIdAsync(refrigerator.Id);
+            drawers.AddRange(refrigeratorDrawers);
+        }
+    }
+
+    private void ShowEditModal(Refrigerator? refrigerator)
+    {
+        editingRefrigerator = refrigerator ?? new Refrigerator { UserID = userId, IsOperational = 1 };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingRefrigerator = new();
+    }
+
+    private void ShowDrawerEditModal(Drawer drawer)
+    {
+        editingDrawer = drawer;
+        showDrawerModal = true;
+    }
+
+    private void CloseDrawerModal()
+    {
+        showDrawerModal = false;
+        editingDrawer = new();
+    }
+
+    private void NavigateToBloodUnits(Refrigerator refrigerator, Drawer drawer)
+    {
+        NavigationManager.NavigateTo($"/blood-units/{refrigerator.Id}/{drawer.Id}");
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            if (editingRefrigerator.Id == 0)
+            {
+                await RefrigeratorService.CreateAsync(editingRefrigerator);
+            }
+            else
+            {
+                await RefrigeratorService.UpdateAsync(editingRefrigerator);
+            }
+
+            await LoadRefrigerators();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error saving refrigerator. Please try again.";
+        }
+    }
+
+    private async Task HandleDrawerValidSubmit()
+    {
+        try
+        {
+            if (editingDrawer.Id == 0)
+            {
+                await DrawerService.CreateAsync(editingDrawer);
+            }
+            else
+            {
+                await DrawerService.UpdateAsync(editingDrawer);
+            }
+
+            await LoadAllDrawers();
+            CloseDrawerModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error saving drawer. Please try again.";
+        }
+    }
+
+    private async Task DeleteRefrigerator(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this refrigerator? This will also delete all its drawers."))
+            return;
+
+        try
+        {
+            // Delete all drawers first
+            var refrigeratorDrawers = drawers.Where(d => d.RefrigeratorID == id).ToList();
+            foreach (var drawer in refrigeratorDrawers)
+            {
+                await DrawerService.DeleteAsync(drawer.Id);
+            }
+
+            await RefrigeratorService.DeleteAsync(id);
+            await LoadRefrigerators();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error deleting refrigerator. Please try again.";
+        }
+    }
+
+    private async Task DeleteDrawer(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this drawer?"))
+            return;
+
+        try
+        {
+            await DrawerService.DeleteAsync(id);
+            await LoadAllDrawers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error deleting drawer. Please try again.";
+        }
+    }
+}

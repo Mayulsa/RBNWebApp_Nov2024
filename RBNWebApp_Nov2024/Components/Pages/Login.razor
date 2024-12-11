@@ -1,0 +1,142 @@
+﻿@page "/login"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Forms
+@inject NavigationManager NavigationManager
+@inject UserCRUD UserService
+@inject ILocalStorageService LocalStorage
+
+<div class="vh-100 d-flex align-items-center justify-content-center bg-light">
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6 col-xl-5">
+                <div class="card border-0 shadow-lg">
+                    <div class="card-body p-5">
+                        <!-- Logo and Title -->
+                        <div class="text-center mb-4">
+                            <img src="/images/blood-drop2.svg" alt="Logo" width="60" class="mb-3" />
+                            <h4 class="text-danger fw-bold mb-2">Red de Bancos de Sangre</h4>
+                        </div>
+
+                        <EditForm Model="@loginModel" OnValidSubmit="HandleLogin" FormName="loginForm">
+                            <DataAnnotationsValidator />
+
+                            @if (!string.IsNullOrEmpty(errorMessage))
+                            {
+                                <div class="alert alert-danger py-2">
+                                    <small>@errorMessage</small>
+                                </div>
+                            }
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Correo Electrónico</label>
+                                <InputText @bind-Value="loginModel.Email"
+                                           class="form-control form-control-lg bg-light"
+                                           placeholder="nombre@ejemplo.com" />
+                                <ValidationMessage For="@(() => loginModel.Email)" class="text-danger small" />
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label small fw-bold">Contraseña</label>
+                                   @*  <a href="#" class="text-danger small text-decoration-none">¿Olvidó su contraseña?</a> *@
+                                </div>
+                                <InputText type="password"
+                                           @bind-Value="loginModel.Password"
+                                           class="form-control form-control-lg bg-light"
+                                           placeholder="Ingrese su contraseña" />
+                                <ValidationMessage For="@(() => loginModel.Password)" class="text-danger small" />
+                            </div>
+
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-danger btn-lg" disabled="@isLoading">
+                                    @if (isLoading)
+                                    {
+                                        <div class="d-flex align-items-center justify-content-center">
+                                            <span class="spinner-border spinner-border-sm me-2"></span>
+                                            <span>Iniciando sesión...</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span>Iniciar Sesión</span>
+                                    }
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                    <div class="card-footer bg-white py-3 border-0">
+                        <div class="text-center text-muted small">
+                            <span>Sistema de Gestión de Bancos de Sangre</span>
+                            <br />
+                            <span>v1.0 © 2024</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginModel loginModel = new();
+    private string? errorMessage;
+    private bool isLoading;
+
+    private async Task HandleLogin()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            var (user, message, success) = await UserService.LoginAsync(loginModel.Email, loginModel.Password);
+
+            if (success && user != null)
+            {
+                List<string> userConfig = new List<string>();
+                userConfig.Add(user.Name);
+                userConfig.Add(user.Email);
+                userConfig.Add(user.Role);
+                userConfig.Add(user.Id.ToString());
+                await LocalStorage.SetItemAsync("userProfile", userConfig.ToList());
+                NavigationManager.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = TranslateErrorMessage(message);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Ha ocurrido un error. Por favor, intente nuevamente.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string TranslateErrorMessage(string message)
+    {
+        return message switch
+        {
+            "Invalid email or password" => "El correo o la contraseña son incorrectos",
+            "User account is inactive" => "Esta cuenta se encuentra inactiva",
+            "Login failed" => "Error al iniciar sesión",
+            _ => "Ha ocurrido un error. Por favor, intente nuevamente."
+        };
+    }
+
+    public class LoginModel
+    {
+        [Required(ErrorMessage = "El correo electrónico es requerido")]
+        [EmailAddress(ErrorMessage = "El formato del correo no es válido")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "La contraseña es requerida")]
+        public string Password { get; set; } = string.Empty;
+    }
+}

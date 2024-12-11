@@ -1,0 +1,95 @@
+﻿import React, { useEffect, useRef, useState } from 'react';
+import { Loader } from 'lucide-react';
+
+export default function UserMap({ users, apiKey }) {
+    const mapRef = useRef(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        // Load Google Maps Script
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+        script.async = true;
+        script.onload = initMap;
+        script.onerror = () => setError('Failed to load Google Maps');
+        document.body.appendChild(script);
+
+        return () => {
+            document.body.removeChild(script);
+        };
+    }, [apiKey]);
+
+    const initMap = () => {
+        try {
+            const google = window.google;
+            const map = new google.maps.Map(mapRef.current, {
+                zoom: 7,
+                center: { lat: 0, lng: 0 }
+            });
+
+            const bounds = new google.maps.LatLngBounds();
+            const markers = [];
+
+            // Add markers for each user
+            users?.forEach(user => {
+                const position = {
+                    lat: parseFloat(user.latitude),
+                    lng: parseFloat(user.longitude)
+                };
+
+                const marker = new google.maps.Marker({
+                    position,
+                    map,
+                    title: user.name
+                });
+
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `
+                        <div>
+                            <h3>${user.name}</h3>
+                            <p>Role: ${user.role}</p>
+                            <p>Email: ${user.email}</p>
+                        </div>
+                    `
+                });
+
+                marker.addListener('click', () => {
+                    infoWindow.open(map, marker);
+                });
+
+                bounds.extend(position);
+                markers.push(marker);
+            });
+
+            // Fit map to show all markers
+            if (markers.length > 0) {
+                map.fitBounds(bounds);
+            }
+
+            setLoading(false);
+        } catch (err) {
+            setError('Error initializing map');
+            setLoading(false);
+        }
+    };
+
+    if (error) {
+        return (
+            <div className="p-4 text-red-500 bg-red-50 rounded">
+                {error}
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative w-full h-96 rounded-lg overflow-hidden border border-gray-200">
+            {loading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+                    <Loader className="animate-spin" />
+                </div>
+            )}
+            <div ref={mapRef} className="w-full h-full" />
+        </div>
+    );
+}
