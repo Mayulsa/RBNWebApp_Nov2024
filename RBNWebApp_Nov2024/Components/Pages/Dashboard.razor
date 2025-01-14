@@ -1,7 +1,335 @@
 ﻿@page "/dashboard"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject BloodUnitsCRUD BloodUnitService
+@inject RefrigeratorCRUD RefrigeratorService
+@inject DrawerCRUD DrawerService
+@inject ReservationCRUD ReservationService
+@implements IDisposable
 
-<h3>Dashboard</h3>
+<PageTitle>Panel de Control - Banco de Sangre</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 80vh">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-warning" role="alert">
+        Por favor, inicie sesión para ver el panel de control.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <!-- Banner de Bienvenida -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card bg-danger text-white">
+                    <div class="card-body">
+                        <h2 class="card-title">Bienvenido, @userName</h2>
+                        <p class="card-text">Panel de Control del Banco de Sangre</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Métricas Clave -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card h-100 border-danger">
+                    <div class="card-body text-center">
+                        <i class="bi bi-thermometer-high text-danger mb-2" style="font-size: 2rem;"></i>
+                        <h5 class="card-title">Total Refrigeradores</h5>
+                        <h2 class="text-danger">@totalRefrigerators</h2>
+                        <p class="text-muted">@operationalRefrigerators operativos</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-danger">
+                    <div class="card-body text-center">
+                        <i class="bi bi-droplet-fill text-danger mb-2" style="font-size: 2rem;"></i>
+                        <h5 class="card-title">Unidades de Sangre</h5>
+                        <h2 class="text-danger">@totalBloodUnits</h2>
+                        <p class="text-muted">@availableBloodUnits disponibles</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-danger">
+                    <div class="card-body text-center">
+                        <i class="bi bi-clock-history text-danger mb-2" style="font-size: 2rem;"></i>
+                        <h5 class="card-title">Solicitudes Pendientes</h5>
+                        <h2 class="text-danger">@pendingRequests</h2>
+                        <p class="text-muted">requieren atención</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-danger">
+                    <div class="card-body text-center">
+                        <i class="bi bi-exclamation-triangle text-danger mb-2" style="font-size: 2rem;"></i>
+                        <h5 class="card-title">Por Vencer</h5>
+                        <h2 class="text-danger">@expiringUnits</h2>
+                        <p class="text-muted">en 7 días</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inventario por Tipo de Sangre -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="card-title mb-0">Inventario por Tipo de Sangre</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo de Sangre</th>
+                                        <th>Unidades Disponibles</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var inventory in bloodTypeInventory)
+                                    {
+                                        <tr>
+                                            <td><span class="badge bg-danger">@inventory.Key</span></td>
+                                            <td>@inventory.Value</td>
+                                            <td>
+                                                @{
+                                                    var status = GetInventoryStatus(inventory.Value);
+                                                    var statusClass = status switch
+                                                    {
+                                                        "Low" => "text-danger",
+                                                        "Medium" => "text-warning",
+                                                        "Good" => "text-success",
+                                                        _ => "text-secondary"
+                                                    };
+                                                    var statusText = status switch
+                                                    {
+                                                        "Low" => "Bajo",
+                                                        "Medium" => "Medio",
+                                                        "Good" => "Óptimo",
+                                                        _ => status
+                                                    };
+                                                }
+                                                <span class="@statusClass">@statusText</span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actividad Reciente -->
+            <div class="col-md-6">
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="card-title mb-0">Actividad Reciente</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group">
+                            @foreach (var activity in recentActivities)
+                            {
+                                <div class="list-group-item">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1">@activity.Title</h6>
+                                        <small class="text-muted">@activity.Time.ToShortTimeString()</small>
+                                    </div>
+                                    <p class="mb-1">@activity.Description</p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acciones Rápidas -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card border-danger">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="card-title mb-0">Acciones Rápidas</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-danger w-100" @onclick='() => NavigationManager.NavigateTo("/refrigerators")'>
+                                    <i class="bi bi-thermometer me-2"></i>Gestionar Refrigeradores
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-danger w-100" @onclick='() => NavigationManager.NavigateTo("/reservations")'>
+                                    <i class="bi bi-clipboard-check me-2"></i>Ver Reservas
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-danger w-100" @onclick='() => NavigationManager.NavigateTo("/manage-reservations")'>
+                                    <i class="bi bi-gear me-2"></i>Gestionar Solicitudes
+                                </button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-danger w-100" @onclick="RefreshData">
+                                    <i class="bi bi-arrow-clockwise me-2"></i>Actualizar Datos
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string userName = "";
+    private int userId;
+    private Timer? refreshTimer;
 
+    // Dashboard metrics
+    private int totalRefrigerators;
+    private int operationalRefrigerators;
+    private int totalBloodUnits;
+    private int availableBloodUnits;
+    private int pendingRequests;
+    private int expiringUnits;
+    private Dictionary<string, int> bloodTypeInventory = new();
+    private List<ActivityItem> recentActivities = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userName = userProfile[0];
+            userId = int.Parse(userProfile[3]);
+
+            await LoadDashboardData();
+
+            refreshTimer = new Timer(async _ =>
+            {
+                await LoadDashboardData();
+                await InvokeAsync(StateHasChanged);
+            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
+        }
+        catch (Exception ex)
+        {
+            // Handle error appropriately
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadDashboardData()
+    {
+        try
+        {
+            var refrigerators = await RefrigeratorService.GetAllByUserIdAsync(userId);
+            totalRefrigerators = refrigerators.Count;
+            operationalRefrigerators = refrigerators.Count(r => r.IsOperational == 1);
+
+            var bloodUnits = await BloodUnitService.GetAllAsync();
+            totalBloodUnits = bloodUnits.Count;
+            availableBloodUnits = bloodUnits.Count(u => u.Status == "Disponible");
+            expiringUnits = bloodUnits.Count(u => u.Status == "Disponible"
+                && u.ExpiryDate <= DateTime.Now.AddDays(7));
+
+            bloodTypeInventory = bloodUnits
+                .Where(u => u.Status == "Disponible")
+                .GroupBy(u => u.BloodType)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var reservations = await ReservationService.GetAllAsync();
+            pendingRequests = reservations.Count(r => r.Status == "Pendiente");
+
+            recentActivities = await GetRecentActivities(reservations);
+        }
+        catch (Exception ex)
+        {
+            // Handle error appropriately
+        }
+    }
+
+    private async Task<List<ActivityItem>> GetRecentActivities(List<Reservation> reservations)
+    {
+        var activities = new List<ActivityItem>();
+
+        foreach (var reservation in reservations.OrderByDescending(r => r.RequestDate).Take(5))
+        {
+            activities.Add(new ActivityItem
+                {
+                    Title = $"Solicitud de Sangre - {reservation.BloodType}",
+                    Description = $"Solicitud de {reservation.UserName} - Estado: {TranslateStatus(reservation.Status)}",
+                    Time = reservation.RequestDate ?? DateTime.Now
+                });
+        }
+
+        return activities;
+    }
+
+    private string TranslateStatus(string status) => status switch
+    {
+        "Pending" => "Pendiente",
+        "Approved" => "Aprobado",
+        "Rejected" => "Rechazado",
+        "Completed" => "Completado",
+        _ => status
+    };
+
+    private string GetInventoryStatus(int count)
+    {
+        return count switch
+        {
+            0 => "Low",
+            <= 2 => "Medium",
+            _ => "Good"
+        };
+    }
+
+    private async Task RefreshData()
+    {
+        isLoading = true;
+        await LoadDashboardData();
+        isLoading = false;
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+
+    private class ActivityItem
+    {
+        public string Title { get; set; } = "";
+        public string Description { get; set; } = "";
+        public DateTime Time { get; set; }
+    }
 }
