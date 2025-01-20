@@ -1,0 +1,58 @@
+﻿@using Radzen.Blazor
+@using System.Globalization
+@using RBNWebApp_Nov2024.Components.Pages
+@using static RBNWebApp_Nov2024.Components.Pages.AdminDashboard
+
+<div class="donation-chart-container">
+    <RadzenChart>
+        <RadzenLineSeries Data="@Data"
+                          CategoryProperty="Date"
+                          ValueProperty="Count"
+                          Title="Donaciones Diarias"
+                          Smooth="true"
+                          LineType="LineType.Solid"
+                          StrokeWidth="3">
+            <RadzenMarkers MarkerType="MarkerType.Circle" Size="6" />
+        </RadzenLineSeries>
+
+        <RadzenCategoryAxis Padding="20"
+                            FormatString="{0:dd MMM}"
+                            Step="2" />
+
+        <RadzenValueAxis Min="0"
+                         Step="50">
+            <RadzenGridLines Visible="true"
+                             LineType="LineType.Dashed" />
+            <RadzenAxisTitle Text="Número de Donaciones" />
+        </RadzenValueAxis>
+
+        <RadzenLegend Position="LegendPosition.Bottom" />
+    </RadzenChart>
+</div>
+
+<style>
+    .donation-chart-container {
+        width: 100%;
+        height: 100%;
+        min-height: 400px;
+        padding: 1rem;
+    }
+
+    ::deep .rz-line-series {
+        stroke: #dc3545;
+    }
+
+    ::deep .rz-series-item-line {
+        stroke: #dc3545;
+    }
+
+    ::deep .rz-marker {
+        stroke: #dc3545;
+        fill: #fff;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public List<DonationDataPoint> Data { get; set; } = new();
+}

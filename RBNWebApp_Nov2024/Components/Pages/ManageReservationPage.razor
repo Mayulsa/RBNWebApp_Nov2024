@@ -6,6 +6,8 @@
 @inject NavigationManager NavigationManager
 @inject BloodUnitsCRUD BloodUnitService
 @inject ReservationCRUD ReservationService
+@inject DrawerCRUD DrawerService
+@inject RefrigeratorCRUD RefrigeratorService
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -146,6 +148,11 @@ else
                                                             Finalizar
                                                         </button>
                                                     }
+                                                    <button class="btn btn-info btn-sm ms-1"
+                                                            @onclick="@(() => ShowDetails(reservation))">
+                                                        <i class="bi bi-info-circle me-1"></i>
+                                                        Detalles
+                                                    </button>
                                                 </td>
                                             </tr>
                                         }
@@ -224,6 +231,87 @@ else
             </div>
         </div>
     </div>
+    @if (showDetailsModal && selectedReservation != null)
+    {
+        <div class="modal fade show" style="display: block" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content border-info">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Detalles de la Solicitud
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseDetailsModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        @if (selectedBloodUnit != null && selectedDrawer != null && selectedRefrigerator != null)
+                        {
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <div class="card border-danger h-100">
+                                        <div class="card-header bg-danger text-white">
+                                            <h6 class="mb-0">
+                                                <i class="bi bi-droplet-fill me-2"></i>
+                                                Información de la Unidad
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <p><strong>Tipo de Sangre:</strong> <span class="badge bg-danger">@selectedBloodUnit.BloodType</span></p>
+                                            <p><strong>Cantidad:</strong> @selectedBloodUnit.Quantity mL</p>
+                                            <p><strong>Fecha de Donación:</strong> @selectedBloodUnit.DonationDate.ToShortDateString()</p>
+                                            <p><strong>Fecha de Vencimiento:</strong> @selectedBloodUnit.ExpiryDate.ToShortDateString()</p>
+                                            <p><strong>Estado:</strong> <span class="badge @GetStatusBadgeClass(selectedBloodUnit.Status)">@selectedBloodUnit.Status</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card border-info h-100">
+                                        <div class="card-header bg-info text-white">
+                                            <h6 class="mb-0">
+                                                <i class="bi bi-geo-alt-fill me-2"></i>
+                                                Ubicación
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <p><strong>Refrigerador:</strong> @selectedRefrigerator.SerialNumber</p>
+                                            <p><strong>Ubicación:</strong> @(selectedRefrigerator.Location ?? "No especificada")</p>
+                                            <p><strong>Gaveta:</strong> #@selectedDrawer.DrawerNumber</p>
+                                            <p><strong>Capacidad de Gaveta:</strong> @selectedDrawer.Capacity unidades</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="card border-secondary">
+                                        <div class="card-header bg-secondary text-white">
+                                            <h6 class="mb-0">
+                                                <i class="bi bi-clock-history me-2"></i>
+                                                Información de la Solicitud
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <p><strong>Solicitante:</strong> @selectedReservation.UserName</p>
+                                            <p><strong>Fecha de Solicitud:</strong> @selectedReservation.RequestDate?.ToString("g")</p>
+                                            @if (!string.IsNullOrEmpty(selectedReservation.Notes))
+                                            {
+                                                <p><strong>Notas:</strong> @selectedReservation.Notes</p>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseDetailsModal">
+                            <i class="bi bi-x-circle me-1"></i>
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
 }
 
 @code {
@@ -236,6 +324,11 @@ else
     private Timer? refreshTimer;
     private Dictionary<int, DateTime> acceptanceTimes = new();
     private const int RESERVATION_TIMEOUT_HOURS = 8;
+    private bool showDetailsModal = false;
+    private Reservation? selectedReservation;
+    private BloodUnit? selectedBloodUnit;
+    private Drawer? selectedDrawer;
+    private Refrigerator? selectedRefrigerator;
 
     protected override async Task OnInitializedAsync()
     {
@@ -433,5 +526,39 @@ else
     public void Dispose()
     {
         refreshTimer?.Dispose();
+    }
+
+    private async Task ShowDetails(Reservation reservation)
+    {
+        try
+        {
+            selectedReservation = reservation;
+            selectedBloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+
+            if (selectedBloodUnit != null)
+            {
+                selectedDrawer = await DrawerService.GetByIdAsync(selectedBloodUnit.DrawerID);
+
+                if (selectedDrawer != null)
+                {
+                    selectedRefrigerator = await RefrigeratorService.GetByIdAsync(selectedDrawer.RefrigeratorID);
+                }
+            }
+
+            showDetailsModal = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading details. Please try again.";
+        }
+    }
+
+    private void CloseDetailsModal()
+    {
+        showDetailsModal = false;
+        selectedReservation = null;
+        selectedBloodUnit = null;
+        selectedDrawer = null;
+        selectedRefrigerator = null;
     }
 }

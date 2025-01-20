@@ -21,7 +21,7 @@
                     }
                 </div>
                 <div class="col-md-4 d-none d-md-block">
-                    <img src="/api/placeholder/400/300" alt="Banco de Sangre" class="img-fluid rounded shadow"/>
+                    <img src="/images/doctor_and_donation.png" alt="Banco de Sangre" @* class="img-fluid rounded shadow" *@ />
                 </div>
             </div>
         </div>
@@ -47,7 +47,7 @@
                     <div class="card-body">
                         <h2 class="card-title text-danger mb-3">Nuestro Objetivo</h2>
                         <p class="card-text">
-                            Esta entidad tiene como objetivo ser una referencia nacional para la provisión 
+                            Esta aplicacion tiene como objetivo ser una referencia nacional para la provisión 
                             de sangre en el país, garantizando un suministro seguro y eficiente para 
                             todos los ciudadanos.
                         </p>
@@ -106,7 +106,16 @@
             if (userProfile != null && userProfile.Any())
             {
                 isLoggedIn = true;
-                NavigationManager.NavigateTo("/dashboard");
+                string userRole = userProfile[2]; // Role is stored at index 2 based on your LoginPage
+                // Redirect based on role
+                if (userRole == "Admin")
+                {
+                    NavigationManager.NavigateTo("/admin-dashboard");
+                }
+                else
+                {
+                    NavigationManager.NavigateTo("/dashboard");
+                }
             }
             else
             {

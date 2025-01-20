@@ -1,0 +1,443 @@
+﻿@* @page "/admin-blood-manager"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject BloodUnitsCRUD BloodUnitService
+@inject ReservationCRUD ReservationService
+@inject UserCRUD UserService
+@inject IJSRuntime JS
+
+<PageTitle>Gestión de Reservas - Administración</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 80vh">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated || userRole != "Admin")
+{
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Acceso no autorizado. Por favor, inicie sesión como administrador.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <!-- Header Section -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card bg-danger text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h2 class="card-title mb-0">Gestión de Reservas de Sangre</h2>
+                                <p class="card-text">Panel de Administración</p>
+                            </div>
+                            <div>
+                                <button class="btn btn-light" @onclick="RefreshData">
+                                    <i class="bi bi-arrow-clockwise me-2"></i>Actualizar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        <!-- Filters -->
+        <div class="card border-danger mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Filtros de Búsqueda</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label class="form-label">Estado</label>
+                            <select class="form-select" @bind="selectedStatus">
+                                <option value="">Todos los Estados</option>
+                                <option value="Pendiente">Pendiente</option>
+                                <option value="Aprobado">Aprobado</option>
+                                <option value="Rechazado">Rechazado</option>
+                                <option value="Finalizado">Finalizado</option>
+                                <option value="Cancelado">Cancelado</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label class="form-label">Tipo de Sangre</label>
+                            <select class="form-select" @bind="selectedBloodType">
+                                <option value="">Todos los Tipos</option>
+                                @foreach (var type in bloodTypes)
+                                {
+                                    <option value="@type">@type</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label class="form-label">Centro Médico</label>
+                            <select class="form-select" @bind="selectedUserId">
+                                <option value="0">Todos los Centros</option>
+                                @foreach (var user in users)
+                                {
+                                    <option value="@user.Id">@user.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label class="form-label">Búsqueda</label>
+                            <input type="text" class="form-control" 
+                                   @bind="searchTerm" 
+                                   placeholder="Buscar..." />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reservations Table -->
+        <div class="card border-danger">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Solicitante</th>
+                                <th>Tipo Sangre</th>
+                                <th>Fecha Solicitud</th>
+                                <th>Estado</th>
+                                <th>Notas</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!FilteredReservations.Any())
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center py-4">
+                                        <i class="bi bi-inbox text-danger fs-4"></i>
+                                        <p class="text-muted mt-2">No se encontraron reservas.</p>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var reservation in FilteredReservations)
+                                {
+                                    <tr>
+                                        <td>@reservation.Id</td>
+                                        <td>@reservation.UserName</td>
+                                        <td>
+                                            <span class="badge bg-danger">@reservation.BloodType</span>
+                                        </td>
+                                        <td>@reservation.RequestDate?.ToShortDateString()</td>
+                                        <td>
+                                            <span class="badge @GetStatusBadgeClass(reservation.Status)">
+                                                @reservation.Status
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(reservation.Notes))
+                                            {
+                                                <button class="btn btn-sm btn-outline-secondary"
+                                                        @onclick="() => ShowNotes(reservation.Notes)">
+                                                    <i class="bi bi-eye-fill"></i>
+                                                </button>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="btn-group">
+                                                @if (reservation.Status == "Pendiente")
+                                                {
+                                                    <button class="btn btn-success btn-sm"
+                                                            @onclick="() => UpdateStatus(reservation, "Aprobado")">
+                                                        <i class="bi bi-check-lg"></i>
+                                                    </button>
+                                                    <button class="btn btn-danger btn-sm"
+                                                            @onclick="() => UpdateStatus(reservation, "Rechazado")">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                }
+                                                @if (reservation.Status == "Aprobado")
+                                                {
+                                                    <button class="btn btn-primary btn-sm"
+                                                            @onclick= "() => UpdateStatus(reservation, "Finalizado")" >
+                                                        <i class="bi bi-check-circle"></i>
+                                                    </button>
+                                                }
+                                                <button class="btn btn-info btn-sm"
+                                                        @onclick="() => ShowHistory(reservation.Id)">
+                                                    <i class="bi bi-clock-history"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @if (showHistoryModal)
+        {
+            <div class="modal fade show" style="display: block" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">Historial de la Reserva</h5>
+                            <button type="button" class="btn-close btn-close-white" @onclick="CloseHistoryModal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="timeline">
+                                @foreach (var history in reservationHistory)
+                                {
+                                    <div class="timeline-item">
+                                        <div class="timeline-badge @GetStatusBadgeClass(history.Status)">
+                                            <i class="bi bi-circle-fill"></i>
+                                        </div>
+                                        <div class="timeline-content">
+                                            <h6 class="mb-1">@history.Status</h6>
+                                            <p class="mb-0">
+                                                Por: @history.UserName<br />
+                                                @history.ChangeDate.ToString("dd/MM/yyyy HH:mm")
+                                            </p>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-backdrop fade show"></div>
+        }
+    </div>
+}
+
+<style>
+    .timeline {
+        position: relative;
+        padding: 20px 0;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-left: 40px;
+        margin-bottom: 20px;
+    }
+
+    .timeline-badge {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 20px;
+        color: white;
+    }
+
+    .timeline-content {
+        padding: 10px;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+    }
+</style>
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string userRole = "";
+    private string? errorMessage;
+    private List<Reservation> reservations = new();
+    private List<User> users = new();
+    private bool showHistoryModal = false;
+    private List<ReservationHistory> reservationHistory = new();
+
+    // Filters
+    private string selectedStatus = "";
+    private string selectedBloodType = "";
+    private int selectedUserId = 0;
+    private string searchTerm = "";
+
+    private readonly string[] bloodTypes = { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userRole = userProfile[2];
+
+            if (userRole != "Admin")
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error cargando datos. Por favor intente nuevamente.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            reservations = await ReservationService.GetAllAsync();
+            users = await UserService.GetAllAsync();
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error cargando datos. Por favor intente nuevamente.";
+        }
+    }
+
+    private IEnumerable<Reservation> FilteredReservations
+    {
+        get
+        {
+            var query = reservations.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(selectedStatus))
+            {
+                query = query.Where(r => r.Status == selectedStatus);
+            }
+
+            if (!string.IsNullOrEmpty(selectedBloodType))
+            {
+                query = query.Where(r => r.BloodType == selectedBloodType);
+            }
+
+            if (selectedUserId != 0)
+            {
+                query = query.Where(r => r.UserID == selectedUserId);
+            }
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                var search = searchTerm.ToLower();
+                query = query.Where(r =>
+                    (r.UserName?.ToLower().Contains(search) ?? false) ||
+                    (r.BloodType?.ToLower().Contains(search) ?? false));
+            }
+
+            return query.OrderByDescending(r => r.RequestDate);
+        }
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pendiente" => "bg-warning text-dark",
+        "Aprobado" => "bg-success",
+        "Rechazado" => "bg-danger",
+        "Finalizado" => "bg-primary",
+        "Cancelado" => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    private async Task UpdateStatus(Reservation reservation, string newStatus)
+    {
+        try
+        {
+            if (newStatus == "Finalizado" && !await JS.InvokeAsync<bool>("confirm", "¿Está seguro de finalizar esta reserva? Esta acción no se puede deshacer."))
+                return;
+
+            reservation.Status = newStatus;
+
+            if (newStatus == "Aprobado")
+            {
+                reservation.AcceptanceTime = DateTime.Now;
+            }
+
+            await ReservationService.UpdateAsync(reservation);
+
+            // Update blood unit status if needed
+            if (newStatus == "Finalizado" || newStatus == "Rechazado")
+            {
+                var bloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+                if (bloodUnit != null)
+                {
+                    bloodUnit.Status = newStatus == "Finalizado" ? "Despachado" : "Disponible";
+                    await BloodUnitService.UpdateAsync(bloodUnit, 0); // Use admin user ID or appropriate value
+                }
+            }
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error actualizando estado de reserva. Por favor intente nuevamente.";
+        }
+    }
+
+    private async Task ShowHistory(int reservationId)
+    {
+        try
+        {
+            reservationHistory = await ReservationService.GetHistoryByReservationIdAsync(reservationId);
+            showHistoryModal = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error cargando historial de reserva. Por favor intente nuevamente.";
+        }
+    }
+
+    private void CloseHistoryModal()
+    {
+        showHistoryModal = false;
+        reservationHistory.Clear();
+    }
+
+    private void ShowNotes(string notes)
+    {
+        JS.InvokeVoidAsync("alert", notes);
+    }
+
+    private async Task RefreshData()
+    {
+        isLoading = true;
+        await LoadData();
+        isLoading = false;
+    }
+}
+ *@

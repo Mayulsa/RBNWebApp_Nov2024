@@ -1,0 +1,126 @@
+﻿@page "/user-map"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject UserCRUD UserService
+@inject IJSRuntime JS
+
+<PageTitle>User Locations - Red Nacional de Bancos de Sangre</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 200px;">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="alert alert-warning" role="alert">
+        Please log in to view the map.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h3 class="card-title mb-0">
+                    <i class="bi bi-geo-alt-fill me-2"></i>Blood Bank Locations
+                </h3>
+            </div>
+            <div class="card-body p-0">
+                @if (errorMessage != null)
+                {
+                    <div class="alert alert-danger m-3">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        @errorMessage
+                    </div>
+                }
+                <div id="map" class="w-100" style="height: 600px;"></div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private List<User> users = new();
+    private string? errorMessage;
+    private int retryCount = 0;
+    private const int MAX_RETRIES = 3;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading user data: " + ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && isAuthenticated && users.Any())
+        {
+            await InitializeMapWithRetry();
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await UserService.GetAllAsync();
+    }
+
+    private async Task InitializeMapWithRetry()
+    {
+        while (retryCount < MAX_RETRIES)
+        {
+            try
+            {
+                var markers = users.Select(u => new
+                {
+                    lat = (double)u.Latitude,
+                    lng = (double)u.Longitude,
+                    title = u.Name ?? "Unknown",
+                    role = u.Role ?? "Unknown"
+                }).ToArray();
+
+                await JS.InvokeVoidAsync("initializeMap", markers);
+                return; // Success, exit the method
+            }
+            catch (Exception ex)
+            {
+                retryCount++;
+                if (retryCount >= MAX_RETRIES)
+                {
+                    errorMessage = $"Failed to load map after {MAX_RETRIES} attempts. Please refresh the page.";
+                    StateHasChanged();
+                }
+                else
+                {
+                    await Task.Delay(1000 * retryCount); // Exponential backoff
+                }
+            }
+        }
+    }
+}

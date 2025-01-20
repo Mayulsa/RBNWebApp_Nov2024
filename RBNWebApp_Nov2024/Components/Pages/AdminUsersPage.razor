@@ -1,0 +1,379 @@
+﻿@page "/admin-users"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject UserCRUD UserService
+@inject IJSRuntime JS
+
+<PageTitle>Gestión de Usuarios - Red Nacional de Bancos de Sangre</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 80vh">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated || userRole != "Admin")
+{
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Acceso no autorizado. Por favor, inicie sesión como administrador.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <!-- Header Section -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card bg-danger text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h2 class="card-title mb-0">Gestión de Usuarios</h2>
+                                <p class="card-text">Administración de cuentas del sistema</p>
+                            </div>
+                            <button class="btn btn-light" @onclick="() => ShowUserModal(null)">
+                                <i class="bi bi-person-plus-fill me-2"></i>Nuevo Usuario
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (errorMessage != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+                <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+            </div>
+        }
+
+        <!-- Filters -->
+        <div class="card border-danger mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Filtros de Búsqueda</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Rol</label>
+                            <select class="form-select" @bind="selectedRole">
+                                <option value="">Todos los Roles</option>
+                                @foreach (var role in roles)
+                                {
+                                    <option value="@role">@role</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Estado</label>
+                            <select class="form-select" @bind="selectedStatus">
+                                <option value="">Todos los Estados</option>
+                                <option value="1">Activo</option>
+                                <option value="0">Inactivo</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label class="form-label">Búsqueda</label>
+                            <input type="text" class="form-control"
+                                   @bind="searchTerm"
+                                   placeholder="Buscar por nombre o email..." />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="card border-danger">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Rol</th>
+                                <th>Provincia</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!FilteredUsers.Any())
+                            {
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <i class="bi bi-people text-danger fs-4"></i>
+                                        <p class="text-muted mt-2">No se encontraron usuarios.</p>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var user in FilteredUsers)
+                                {
+                                    <tr>
+                                        <td>@user.Name</td>
+                                        <td>@user.Email</td>
+                                        <td><span class="badge bg-primary">@user.Role</span></td>
+                                        <td>@user.Provincia</td>
+                                        <td>
+                                            @if (user.IsActive == 1)
+                                            {
+                                                <span class="badge bg-success">Activo</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Inactivo</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="btn-group">
+                                                <button class="btn btn-outline-primary btn-sm"
+                                                        @onclick="() => ShowUserModal(user)">
+                                                    <i class="bi bi-pencil-fill"></i>
+                                                </button>
+                                                <button class="btn btn-outline-danger btn-sm"
+                                                        @onclick="() => DeleteUser(user.Id)">
+                                                    <i class="bi bi-trash-fill"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (showModal)
+    {
+        <div class="modal fade show" style="display: block" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            @(editingUser.Id == 0 ? "Nuevo Usuario" : "Editar Usuario")
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="CloseModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <EditForm Model="@editingUser" OnValidSubmit="HandleValidSubmit">
+                            <DataAnnotationsValidator />
+                            <div class="mb-3">
+                                <label class="form-label">Nombre</label>
+                                <InputText @bind-Value="editingUser.Name" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Email</label>
+                                <InputText @bind-Value="editingUser.Email" class="form-control" />
+                            </div>
+                            @if (editingUser.Id == 0)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Contraseña</label>
+                                    <InputText type="password" @bind-Value="editingUser.Password" class="form-control" />
+                                </div>
+                            }
+                            <div class="mb-3">
+                                <label class="form-label">Rol</label>
+                                <InputSelect @bind-Value="editingUser.Role" class="form-select">
+                                    @foreach (var role in roles)
+                                    {
+                                        <option value="@role">@role</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Provincia</label>
+                                <InputText @bind-Value="editingUser.Provincia" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Latitud</label>
+                                <InputNumber @bind-Value="editingUser.Latitude" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Longitud</label>
+                                <InputNumber @bind-Value="editingUser.Longitude" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <InputSelect @bind-Value="editingUser.IsActive" class="form-select">
+                                        <option value="1">Activo</option>
+                                        <option value="0">Inactivo</option>
+                                    </InputSelect>
+                                    <label class="form-check-label" for="isActive">Usuario Activo</label>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" @onclick="CloseModal">
+                                    Cancelar
+                                </button>
+                                <button type="submit" class="btn btn-danger">
+                                    Guardar
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    }
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string userRole = "";
+    private string? errorMessage;
+    private List<User> users = new();
+    private bool showModal = false;
+    private User editingUser = new();
+
+    // Filters
+    private string selectedRole = "";
+    private string selectedStatus = "";  // Will be parsed to int when needed
+    private string searchTerm = "";
+
+    private readonly string[] roles = { "Admin", "User" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userRole = userProfile[2];
+
+            if (userRole != "Admin")
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading users. Please try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            users = await UserService.GetAllAsync();
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error loading users. Please try again.";
+        }
+    }
+
+    private IEnumerable<User> FilteredUsers
+    {
+        get
+        {
+            var query = users.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(selectedRole))
+            {
+                query = query.Where(u => u.Role == selectedRole);
+            }
+
+            if (!string.IsNullOrEmpty(selectedStatus))
+            {
+                int statusValue = int.Parse(selectedStatus);
+                query = query.Where(u => u.IsActive == statusValue);
+            }
+
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                var search = searchTerm.ToLower();
+                query = query.Where(u =>
+                    (u.Name?.ToLower().Contains(search) ?? false) ||
+                    (u.Email?.ToLower().Contains(search) ?? false));
+            }
+
+            return query;
+        }
+    }
+
+    private void ShowUserModal(User? user)
+    {
+        editingUser = user ?? new User { IsActive = 1 };
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+        editingUser = new();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            if (editingUser.Id == 0)
+            {
+                await UserService.CreateAsync(editingUser);
+            }
+            else
+            {
+                await UserService.UpdateAsync(editingUser);
+            }
+
+            await LoadUsers();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error saving user. Please try again.";
+        }
+    }
+
+    private async Task DeleteUser(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to delete this user?"))
+            return;
+
+        try
+        {
+            await UserService.DeleteAsync(id);
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error deleting user. Please try again.";
+        }
+    }
+}

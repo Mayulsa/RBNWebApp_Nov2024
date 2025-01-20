@@ -71,7 +71,7 @@
                         <div class="text-center text-muted small">
                             <span>Sistema de Gestión de Bancos de Sangre</span>
                             <br />
-                            <span>v1.0 © 2024</span>
+                            <span>v1.0 © 2025</span>
                         </div>
                     </div>
                 </div>
@@ -102,7 +102,8 @@
                 userConfig.Add(user.Role);
                 userConfig.Add(user.Id.ToString());
                 await LocalStorage.SetItemAsync("userProfile", userConfig.ToList());
-                NavigationManager.NavigateTo("/");
+                // Force a full page refresh to update navigation
+                NavigationManager.NavigateTo("/", true); // The 'true' parameter forces a full page reload
             }
             else
             {

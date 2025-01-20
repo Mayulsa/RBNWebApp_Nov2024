@@ -1,0 +1,172 @@
+﻿@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-danger shadow-sm">
+    <div class="container-fluid">
+        <a class="navbar-brand d-flex align-items-center" href="">
+            <i class="bi bi-droplet-fill me-2"></i>
+            Red Nacional de Bancos de Sangre
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            @if (isAuthenticated)
+            {
+                <ul class="navbar-nav me-auto">
+                    @if (userRole == "Admin")
+                    {
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="admin-dashboard">
+                                <i class="bi bi-speedometer2 me-1"></i>Dashboard Admin
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="admin-users">
+                                <i class="bi bi-people-fill me-1"></i>Gestión de Usuarios
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="admin-blood-manager">
+                                <i class="bi bi-droplet-half me-1"></i>Gestión de Sangre
+                            </NavLink>
+                        </li>
+                    }
+                    @if (userRole != "Admin")
+                    {
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                                <i class="bi bi-house-door-fill me-1"></i>Inicio
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="reservations">
+                                <i class="bi bi-clipboard-check me-1"></i>Reservaciones
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="manage-reservations">
+                                <i class="bi bi-gear me-1"></i>Gestión de Reservas
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="refrigerators">
+                                <i class="bi bi-thermometer-high me-1"></i>Refrigeradores
+                            </NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="user-map">
+                                <i class="bi bi-geo-alt me-1"></i>Mapa de Ubicaciones
+                            </NavLink>
+                        </li>
+                    }
+                </ul>
+            }
+            <ul class="navbar-nav">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-1"></i>
+                        @if (isAuthenticated)
+                        {
+                            @userName
+                        }
+                        else
+                        {
+                            <span>Mi Cuenta</span>
+                        }
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        @if (!isAuthenticated)
+                        {
+                            <li>
+                                <NavLink class="dropdown-item" href="login">
+                                    <i class="bi bi-box-arrow-in-right me-1"></i>Iniciar Sesión
+                                </NavLink>
+                            </li>
+                        }
+                        else
+                        {
+                            <li>
+                                <span class="dropdown-item-text">
+                                    <i class="bi bi-person me-1"></i>@userName
+                                </span>
+                            </li>
+                            <li>
+                                <span class="dropdown-item-text">
+                                    <i class="bi bi-shield-lock me-1"></i>@userRole
+                                </span>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item text-danger" href="javascript:void(0)" @onclick="LogoutAsync">
+                                    <i class="bi bi-box-arrow-left me-1"></i>Cerrar Sesión
+                                </a>
+                            </li>
+                        }
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+@code {
+    private bool isAuthenticated = false;
+    private string userName = "";
+    private string userRole = "";
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        // Set up a timer to periodically check auth state
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await CheckAuthenticationState();
+        }, null, 0, 1000); // Check every second
+    }
+
+    private async Task CheckAuthenticationState()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            var wasAuthenticated = isAuthenticated;
+            var oldRole = userRole;
+
+            isAuthenticated = userProfile != null && userProfile.Any();
+            if (isAuthenticated)
+            {
+                userName = userProfile![0];
+                userRole = userProfile[2];
+            }
+            else
+            {
+                userName = "";
+                userRole = "";
+            }
+
+            // Only trigger a re-render if something changed
+            if (wasAuthenticated != isAuthenticated || oldRole != userRole)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking authentication state: {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await LocalStorage.RemoveItemAsync("userProfile");
+        NavigationManager.NavigateTo("/login", true);
+    }
+}

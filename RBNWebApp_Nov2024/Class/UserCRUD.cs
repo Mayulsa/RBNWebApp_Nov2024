@@ -48,8 +48,8 @@ namespace RBNWebApp_Nov2024.Class
         public async Task<List<User>> GetAllAsync()
         {
             const string sql = @"
-                SELECT UserID, Name, Email, Role, Latitude, Longitude, GooglePlaceID, IsActive 
-                FROM Users;";
+        SELECT UserID, Name, Email, Role, Latitude, Longitude, GooglePlaceID, IsActive, Provincia 
+        FROM Users;";
 
             var users = new List<User>();
 
@@ -68,7 +68,9 @@ namespace RBNWebApp_Nov2024.Class
                     Role = reader.GetString(reader.GetOrdinal("Role")),
                     Latitude = reader.GetDecimal(reader.GetOrdinal("Latitude")),
                     Longitude = reader.GetDecimal(reader.GetOrdinal("Longitude")),
-                    GooglePlaceID = reader.IsDBNull(reader.GetOrdinal("GooglePlaceID")) ? null : reader.GetString(reader.GetOrdinal("GooglePlaceID"))
+                    GooglePlaceID = reader.IsDBNull(reader.GetOrdinal("GooglePlaceID")) ? null : reader.GetString(reader.GetOrdinal("GooglePlaceID")),
+                    IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive")) ? 1 : 0,
+                    Provincia = reader.GetString(reader.GetOrdinal("Provincia"))
                 });
             }
 
@@ -270,6 +272,7 @@ namespace RBNWebApp_Nov2024.Class
         public decimal Latitude { get; set; }
         public decimal Longitude { get; set; }
         public string? GooglePlaceID { get; set; }
+        public int IsActive { get; set; } = 1;
     }
 
 }
