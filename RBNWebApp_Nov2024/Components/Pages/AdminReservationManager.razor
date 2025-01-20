@@ -1,0 +1,231 @@
+﻿@page "/admin-blood-manager"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject ReservationCRUD ReservationService
+@inject BloodUnitsCRUD BloodUnitService
+@implements IDisposable
+
+<PageTitle>Gestión de Reservas - Administrador</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 80vh">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated || userRole != "Admin")
+{
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Acceso no autorizado. Por favor, inicie sesión como administrador.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="card bg-danger text-white">
+                    <div class="card-body">
+                        <h2 class="mb-0">Gestión de Reservas de Sangre</h2>
+                        <p class="mb-0">Panel de Control Administrativo</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card border-danger">
+                    <div class="card-body text-center">
+                        <h3 class="text-danger mb-2">@totalReservations</h3>
+                        <p class="mb-0">Total Reservas</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-warning">
+                    <div class="card-body text-center">
+                        <h3 class="text-warning mb-2">@pendingReservations</h3>
+                        <p class="mb-0">Reservas Pendientes</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-success">
+                    <div class="card-body text-center">
+                        <h3 class="text-success mb-2">@approvedReservations</h3>
+                        <p class="mb-0">Reservas Aprobadas</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-danger">
+                    <div class="card-body text-center">
+                        <h3 class="text-danger mb-2">@rejectedReservations</h3>
+                        <p class="mb-0">Reservas Rechazadas</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reservations Table -->
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Lista de Reservas</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Usuario</th>
+                                <th>Tipo de Sangre</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var reservation in reservations)
+                            {
+                                <tr>
+                                    <td>@reservation.Id</td>
+                                    <td>@reservation.UserName</td>
+                                    <td>
+                                        <span class="badge bg-danger">@reservation.BloodType</span>
+                                    </td>
+                                    <td>@reservation.RequestDate?.ToShortDateString()</td>
+                                    <td>
+                                        <span class="badge @GetStatusBadgeClass(reservation.Status)">
+                                            @reservation.Status
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            @if (reservation.Status == "Pendiente")
+                                            {
+                                                <button class="btn btn-success btn-sm"
+                                                        @onclick="@(() => UpdateStatus(reservation.Id, " Aprobado"))">
+                                                    Aprobar
+                                                </button>
+                                                <button class="btn btn-danger btn-sm"
+                                                        @onclick="@(() => UpdateStatus(reservation.Id, " Rechazado"))">
+                                                    Rechazar
+                                                </button>
+                                            }
+                                            <button class="btn btn-info btn-sm"
+                                                    @onclick="() => ViewDetails(reservation.Id)">
+                                                Detalles
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string userRole = "";
+    private List<Reservation> reservations = new();
+    private Timer? refreshTimer;
+
+    // Statistics
+    private int totalReservations => reservations.Count;
+    private int pendingReservations => reservations.Count(r => r.Status == "Pendiente");
+    private int approvedReservations => reservations.Count(r => r.Status == "Aprobado");
+    private int rejectedReservations => reservations.Count(r => r.Status == "Rechazado");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userRole = userProfile[2];
+
+            if (userRole != "Admin")
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            await LoadData();
+
+            // Setup timer for periodic refresh
+            refreshTimer = new Timer(async state =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await LoadData();
+                    StateHasChanged();
+                });
+            }, null, TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(30));
+        }
+        catch (Exception ex)
+        {
+            // Handle error
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        reservations = await ReservationService.GetAllAsync();
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pendiente" => "bg-warning",
+        "Aprobado" => "bg-success",
+        "Rechazado" => "bg-danger",
+        "Finalizado" => "bg-primary",
+        _ => "bg-secondary"
+    };
+
+    private async Task UpdateStatus(int reservationId, string newStatus)
+    {
+        var reservation = await ReservationService.GetByIdAsync(reservationId);
+        if (reservation != null)
+        {
+            reservation.Status = newStatus;
+            await ReservationService.UpdateAsync(reservation);
+            await LoadData();
+        }
+    }
+
+    private void ViewDetails(int reservationId)
+    {
+        // Implement details view logic
+        NavigationManager.NavigateTo($"/reservation-details/{reservationId}");
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}

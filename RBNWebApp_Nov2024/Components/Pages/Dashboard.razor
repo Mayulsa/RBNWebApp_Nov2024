@@ -252,17 +252,34 @@ else
     {
         try
         {
+            // Get user's refrigerators
             var refrigerators = await RefrigeratorService.GetAllByUserIdAsync(userId);
             totalRefrigerators = refrigerators.Count;
             operationalRefrigerators = refrigerators.Count(r => r.IsOperational == 1);
 
-            var bloodUnits = await BloodUnitService.GetAllAsync();
-            totalBloodUnits = bloodUnits.Count;
-            availableBloodUnits = bloodUnits.Count(u => u.Status == "Disponible");
-            expiringUnits = bloodUnits.Count(u => u.Status == "Disponible"
+            // Get all drawers for user's refrigerators
+            var userDrawers = new List<Drawer>();
+            foreach (var refrigerator in refrigerators)
+            {
+                var drawerList = await DrawerService.GetAllByRefrigeratorIdAsync(refrigerator.Id);
+                userDrawers.AddRange(drawerList);
+            }
+
+            // Get blood units for user's drawers
+            var userBloodUnits = new List<BloodUnit>();
+            foreach (var drawer in userDrawers)
+            {
+                var drawerBloodUnits = await BloodUnitService.GetAllByDrawerIdAsync(drawer.Id);
+                userBloodUnits.AddRange(drawerBloodUnits);
+            }
+
+            // Update metrics using only user's blood units
+            totalBloodUnits = userBloodUnits.Count;
+            availableBloodUnits = userBloodUnits.Count(u => u.Status == "Disponible");
+            expiringUnits = userBloodUnits.Count(u => u.Status == "Disponible"
                 && u.ExpiryDate <= DateTime.Now.AddDays(7));
 
-            bloodTypeInventory = bloodUnits
+            bloodTypeInventory = userBloodUnits
                 .Where(u => u.Status == "Disponible")
                 .GroupBy(u => u.BloodType)
                 .ToDictionary(g => g.Key, g => g.Count());

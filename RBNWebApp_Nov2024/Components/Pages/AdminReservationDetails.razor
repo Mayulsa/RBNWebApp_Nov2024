@@ -1,0 +1,317 @@
+﻿@page "/reservation-details/{ReservationId:int}"
+@rendermode InteractiveServer
+@using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager NavigationManager
+@inject ReservationCRUD ReservationService
+@inject BloodUnitsCRUD BloodUnitService
+@inject DrawerCRUD DrawerService
+@inject RefrigeratorCRUD RefrigeratorService
+@inject UserCRUD UserService
+
+<PageTitle>Detalles de Reserva - Administrador</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 80vh">
+        <div class="spinner-border text-danger" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated || userRole != "Admin")
+{
+    <div class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Acceso no autorizado. Por favor, inicie sesión como administrador.
+    </div>
+}
+else if (reservation == null)
+{
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Reserva no encontrada.
+    </div>
+}
+else
+{
+    <div class="container-fluid mt-4">
+        <!-- Header with Back Button -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <button class="btn btn-outline-danger" @onclick="NavigateBack">
+                <i class="bi bi-arrow-left me-2"></i>Volver
+            </button>
+            <h2 class="mb-0">Detalles de la Reserva #@ReservationId</h2>
+        </div>
+
+        <div class="row g-4">
+            <!-- Reservation Information -->
+            <div class="col-md-6">
+                <div class="card border-danger h-100">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Información de la Reserva
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <dl class="row">
+                            <dt class="col-sm-4">Estado:</dt>
+                            <dd class="col-sm-8">
+                                <span class="badge @GetStatusBadgeClass(reservation.Status)">
+                                    @GetSpanishStatus(reservation.Status)
+                                </span>
+                            </dd>
+
+                            <dt class="col-sm-4">Solicitante:</dt>
+                            <dd class="col-sm-8">@reservation.UserName</dd>
+
+                            <dt class="col-sm-4">Fecha de Solicitud:</dt>
+                            <dd class="col-sm-8">@reservation.RequestDate?.ToString("g")</dd>
+
+                            @if (reservation.AcceptanceTime.HasValue)
+                            {
+                                <dt class="col-sm-4">Fecha de Aprobación:</dt>
+                                <dd class="col-sm-8">@reservation.AcceptanceTime?.ToString("g")</dd>
+                            }
+
+                            @if (!string.IsNullOrEmpty(reservation.Notes))
+                            {
+                                <dt class="col-sm-4">Notas:</dt>
+                                <dd class="col-sm-8">@reservation.Notes</dd>
+                            }
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Blood Unit Information -->
+            @if (bloodUnit != null)
+            {
+                <div class="col-md-6">
+                    <div class="card border-danger h-100">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-droplet-fill me-2"></i>
+                                Información de la Unidad de Sangre
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <dl class="row">
+                                <dt class="col-sm-4">Tipo de Sangre:</dt>
+                                <dd class="col-sm-8">
+                                    <span class="badge bg-danger">@bloodUnit.BloodType</span>
+                                </dd>
+
+                                <dt class="col-sm-4">Cantidad:</dt>
+                                <dd class="col-sm-8">@bloodUnit.Quantity mL</dd>
+
+                                <dt class="col-sm-4">Fecha de Donación:</dt>
+                                <dd class="col-sm-8">@bloodUnit.DonationDate.ToShortDateString()</dd>
+
+                                <dt class="col-sm-4">Fecha de Vencimiento:</dt>
+                                <dd class="col-sm-8">@bloodUnit.ExpiryDate.ToShortDateString()</dd>
+
+                                <dt class="col-sm-4">Estado:</dt>
+                                <dd class="col-sm-8">
+                                    <span class="badge @GetStatusBadgeClass(bloodUnit.Status)">
+                                        @GetSpanishStatus(bloodUnit.Status)
+                                    </span>
+                                </dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- Location Information -->
+            @if (drawer != null && refrigerator != null)
+            {
+                <div class="col-12">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-geo-alt-fill me-2"></i>
+                                Información de Ubicación
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Información del Refrigerador</h6>
+                                    <dl class="row">
+                                        <dt class="col-sm-4">Número de Serie:</dt>
+                                        <dd class="col-sm-8">@refrigerator.SerialNumber</dd>
+
+                                        <dt class="col-sm-4">Ubicación:</dt>
+                                        <dd class="col-sm-8">@(refrigerator.Location ?? "No especificada")</dd>
+
+                                        <dt class="col-sm-4">Estado:</dt>
+                                        <dd class="col-sm-8">
+                                            @if (refrigerator.IsOperational == 1)
+                                            {
+                                                <span class="badge bg-success">Operativo</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger">Fuera de Servicio</span>
+                                            }
+                                        </dd>
+                                    </dl>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Información del Cajón</h6>
+                                    <dl class="row">
+                                        <dt class="col-sm-4">Número:</dt>
+                                        <dd class="col-sm-8">@drawer.DrawerNumber</dd>
+
+                                        <dt class="col-sm-4">Capacidad:</dt>
+                                        <dd class="col-sm-8">@drawer.Capacity unidades</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- History -->
+            @if (reservationHistory.Any())
+            {
+                <div class="col-12">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-clock-history me-2"></i>
+                                Historial de la Reserva
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Fecha</th>
+                                            <th>Estado</th>
+                                            <th>Usuario</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var history in reservationHistory.OrderByDescending(h => h.ChangeDate))
+                                        {
+                                            <tr>
+                                                <td>@history.ChangeDate.ToString("g")</td>
+                                                <td>
+                                                    <span class="badge @GetStatusBadgeClass(history.Status)">
+                                                        @GetSpanishStatus(history.Status)
+                                                    </span>
+                                                </td>
+                                                <td>@history.UserName</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int ReservationId { get; set; }
+
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private string userRole = "";
+    private Reservation? reservation;
+    private BloodUnit? bloodUnit;
+    private Drawer? drawer;
+    private Refrigerator? refrigerator;
+    private List<ReservationHistory> reservationHistory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var userProfile = await LocalStorage.GetItemAsync<List<string>>("userProfile");
+            if (userProfile == null || !userProfile.Any())
+            {
+                NavigationManager.NavigateTo("/login");
+                return;
+            }
+
+            isAuthenticated = true;
+            userRole = userProfile[2];
+
+            if (userRole != "Admin")
+            {
+                NavigationManager.NavigateTo("/");
+                return;
+            }
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            // Handle error
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        // Load reservation details
+        reservation = await ReservationService.GetByIdAsync(ReservationId);
+        if (reservation != null)
+        {
+            // Load blood unit details
+            bloodUnit = await BloodUnitService.GetByIdAsync(reservation.BloodUnitID);
+            if (bloodUnit != null)
+            {
+                // Load drawer details
+                drawer = await DrawerService.GetByIdAsync(bloodUnit.DrawerID);
+                if (drawer != null)
+                {
+                    // Load refrigerator details
+                    refrigerator = await RefrigeratorService.GetByIdAsync(drawer.RefrigeratorID);
+                }
+            }
+
+            // Load reservation history
+            reservationHistory = await ReservationService.GetHistoryByReservationIdAsync(ReservationId);
+        }
+    }
+
+    private string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pendiente" => "bg-warning text-dark",
+        "Aprobado" => "bg-success",
+        "Rechazado" => "bg-danger",
+        "Finalizado" => "bg-primary",
+        "Cancelado" => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    private string GetSpanishStatus(string status) => status switch
+    {
+        "Pendiente" => "Pendiente",
+        "Aprobado" => "Aprobado",
+        "Rechazado" => "Rechazado",
+        "Finalizado" => "Finalizado",
+        "Cancelado" => "Cancelado",
+        _ => status
+    };
+
+    private void NavigateBack()
+    {
+        NavigationManager.NavigateTo("/admin-blood-manager");
+    }
+}

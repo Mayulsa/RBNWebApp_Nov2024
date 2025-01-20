@@ -1,8 +1,13 @@
 ﻿@page "/"
 @using Blazored.LocalStorage
+@using RBNWebApp_Nov2024.Class
 @rendermode InteractiveServer
 @inject NavigationManager NavigationManager
 @inject ILocalStorageService LocalStorage
+@inject BloodUnitsCRUD BloodUnitService
+@inject UserCRUD UserService
+@inject RefrigeratorCRUD RefrigeratorService
+@inject DrawerCRUD DrawerService
 @implements IAsyncDisposable
 
 <div class="container-fluid px-0">
@@ -22,6 +27,88 @@
                 </div>
                 <div class="col-md-4 d-none d-md-block">
                     <img src="/images/doctor_and_donation.png" alt="Banco de Sangre" @* class="img-fluid rounded shadow" *@ />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Blood Bank Search Section -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                    <h2 class="h4 mb-0">Búsqueda de Sangre Disponible</h2>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Tipo de Sangre</label>
+                            <select class="form-select" @bind="selectedBloodType">
+                                <option value="">Seleccione un tipo</option>
+                                @foreach (var type in bloodTypes)
+                                {
+                                    <option value="@type">@type</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Provincia</label>
+                            <select class="form-select" @bind="selectedProvincia">
+                                <option value="">Todas las provincias</option>
+                                @foreach (var provincia in provincias)
+                                {
+                                    <option value="@provincia">@provincia</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button class="btn btn-danger w-100" @onclick="SearchBloodBanks">
+                                <i class="bi bi-search me-2"></i>Buscar
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (showResults)
+                    {
+                        @if (!filteredBloodBanks.Any())
+                        {
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>No se encontraron bancos de sangre con el tipo seleccionado.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Banco de Sangre</th>
+                                            <th>Provincia</th>
+                                            <th>Cantidad Disponible</th>
+                                            <th> </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var bank in filteredBloodBanks)
+                                        {
+                                            <tr>
+                                                <td>@bank.Name</td>
+                                                <td>@bank.Provincia</td>
+                                                <td>
+                                                    <span class="badge bg-success">@bank.AvailableUnits unidades</span>
+                                                </td>
+                                                @* <td>
+                                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => NavigateToLogin()">
+                                                        <i class="bi bi-box-arrow-in-right me-1"></i>Iniciar sesión para reservar
+                                                    </button>
+                                                </td> *@
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    }
                 </div>
             </div>
         </div>
@@ -71,6 +158,8 @@
             </div>
         </div>
 
+        
+
         <!-- Call to Action -->
         @if (!isLoggedIn)
         {
@@ -91,6 +180,14 @@
 </style>
 
 @code {
+    private string selectedBloodType = "";
+    private string selectedProvincia = "";
+    private bool showResults = false;
+    private List<BloodBankInfo> filteredBloodBanks = new();
+
+    private readonly string[] bloodTypes = { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" };
+    private readonly string[] provincias = { "Santo Domingo", "Santiago", "La Vega", "San Cristóbal", "Puerto Plata" }; // Add more as needed
+
     private bool isLoggedIn = false;
 
     protected override async Task OnInitializedAsync()
@@ -136,5 +233,75 @@
     public async ValueTask DisposeAsync()
     {
         // Cleanup if needed
+    }
+
+    private async Task SearchBloodBanks()
+    {
+        if (string.IsNullOrEmpty(selectedBloodType))
+        {
+            return;
+        }
+
+        showResults = true;
+        filteredBloodBanks.Clear();
+
+        try
+        {
+            var users = await UserService.GetAllAsync();
+            var bloodUnits = await BloodUnitService.GetAllAsync();
+
+            // Get refrigerators for each user
+            var refrigerators = await RefrigeratorService.GetAllAsync();
+
+            var availableBloodBanks = new List<BloodBankInfo>();
+
+            foreach (var user in users)
+            {
+                if (!string.IsNullOrEmpty(selectedProvincia) && user.Provincia != selectedProvincia)
+                {
+                    continue;
+                }
+
+                // Get all refrigerators for this user
+                var userRefrigerators = refrigerators.Where(r => r.UserID == user.Id);
+
+                // Get all drawers for these refrigerators
+                var drawerIds = new List<int>();
+                foreach (var refrigerator in userRefrigerators)
+                {
+                    var drawers = await DrawerService.GetAllByRefrigeratorIdAsync(refrigerator.Id);
+                    drawerIds.AddRange(drawers.Select(d => d.Id));
+                }
+
+                // Count available blood units of the selected type in these drawers
+                var availableUnits = bloodUnits.Count(bu =>
+                    drawerIds.Contains(bu.DrawerID) &&
+                    bu.Status == "Disponible" &&
+                    bu.BloodType == selectedBloodType);
+
+                if (availableUnits > 0)
+                {
+                    availableBloodBanks.Add(new BloodBankInfo
+                        {
+                            Name = user.Name ?? "",
+                            Provincia = user.Provincia ?? "",
+                            AvailableUnits = availableUnits
+                        });
+                }
+            }
+
+            filteredBloodBanks = availableBloodBanks;
+        }
+        catch (Exception ex)
+        {
+            // Handle error if needed
+        }
+    }
+
+    private class BloodBankInfo
+    {
+        public string Name { get; set; } = "";
+        public string Provincia { get; set; } = "";
+        public int AvailableUnits { get; set; }
     }
 }
